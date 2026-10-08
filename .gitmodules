@@ -1,0 +1,6 @@
+[submodule "references/IDNNs"]
+	path = references/IDNNs
+	url = https://github.com/ravidziv/IDNNs.git
+[submodule "references/open-blackbox-nn"]
+	path = references/open-blackbox-nn
+	url = https://github.com/newwhitecheng/open-blackbox-nn.git
