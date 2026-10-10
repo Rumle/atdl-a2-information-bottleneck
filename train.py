@@ -20,7 +20,7 @@ def train(
     run_dir = Path(run_dir).resolve()
     if resume is not None:
         model = IBNetwork.load_from_checkpoint(resume, map_location="cpu")
-        # Keep the saved setup. Only the total epoch target can change on resume.
+        # Restore the saved setup and update the target epoch count.
         settings = replace(model.settings, epochs=settings.epochs)
     settings = replace(settings, data_path=str(Path(settings.data_path).resolve()))
     pl.seed_everything(settings.seed, workers=True)
@@ -33,7 +33,9 @@ def train(
         model.settings = settings
         model.save_hyperparameters({"settings": asdict(settings)})
     run_dir.mkdir(parents=True, exist_ok=True)
+    # Save the split indices so the run can be reproduced.
     np.savez(run_dir / "split.npz", train=data.train_indices, test=data.test_indices)
+    # Keep the latest epoch checkpoint for resuming training.
     checkpoint = ModelCheckpoint(
         dirpath=run_dir / "checkpoints",
         save_last="link",
@@ -65,6 +67,7 @@ def train_runs(
 ):
     random = np.random.default_rng(settings.seed)
     for run_index in range(num_runs):
+        # Draw separate seeds for model initialization and the data split.
         seed, split_seed = random.integers(0, 2**32, size=2).tolist()
         run_settings = replace(settings, seed=seed, split_seed=split_seed, random_split=True)
         print(f"Run {run_index + 1}/{num_runs}")

@@ -19,8 +19,7 @@ class Settings:
     data_path: str = str(DEFAULT_DATA)
     hidden_sizes: tuple[int, ...] = (10, 7, 5, 4, 3)
     activation: str = "tanh"
-    optimizer: str = "adam"
-    learning_rate: float = 0.002
+    learning_rate: float = 0.0004
     batch_size: int = 512
     epochs: int = 8000
     train_fraction: float = 0.8
@@ -34,7 +33,7 @@ def load_dataset(path: str | Path) -> TensorDataset:
     arrays = loadmat(path)
     inputs = np.asarray(arrays["F"], dtype=np.float32)
     labels = np.asarray(arrays["y"], dtype=np.float32).reshape(-1)
-    # Keep the authors' class order.
+    # Convert labels to two class probabilities in the authors' order.
     targets = np.column_stack((labels, 1 - labels))
     return TensorDataset(torch.from_numpy(inputs), torch.from_numpy(targets))
 
@@ -47,6 +46,7 @@ class IBData(pl.LightningDataModule):
         indices = np.arange(len(self.dataset))
         if settings.random_split:
             indices = np.random.default_rng(settings.split_seed).permutation(indices)
+        # Divide the indices into training and test sets.
         train_size = int(np.rint(len(indices) * settings.train_fraction))
         if not 0 < train_size < len(indices):
             raise ValueError("The split must leave samples in both sets.")
@@ -72,6 +72,7 @@ class IBData(pl.LightningDataModule):
         )
 
     def val_dataloader(self):
+        # Evaluate both sets at the end of each epoch.
         return [
             DataLoader(self.train_data, batch_size=self.settings.batch_size, num_workers=0),
             DataLoader(self.test_data, batch_size=self.settings.batch_size, num_workers=0),
@@ -90,6 +91,7 @@ class IBNetwork(pl.LightningModule):
             nn.Linear(input_width, output_width)
             for input_width, output_width in zip(sizes[:-1], sizes[1:])
         )
+        # Scale initial weights by the layer's input width.
         for layer in self.layers:
             standard_deviation = layer.in_features**-0.5
             nn.init.trunc_normal_(
@@ -101,6 +103,7 @@ class IBNetwork(pl.LightningModule):
             nn.init.zeros_(layer.bias)
 
     def forward(self, inputs):
+        # Apply activations to hidden layers and return the output logits.
         activation = {"tanh": torch.tanh, "relu": torch.relu}[self.settings.activation]
         for layer in self.layers[:-1]:
             inputs = activation(layer(inputs))
@@ -127,5 +130,4 @@ class IBNetwork(pl.LightningModule):
         )
 
     def configure_optimizers(self):
-        optimizer = {"adam": torch.optim.Adam, "sgd": torch.optim.SGD}[self.settings.optimizer]
-        return optimizer(self.parameters(), lr=self.settings.learning_rate, weight_decay=0)
+        return torch.optim.SGD(self.parameters(), lr=self.settings.learning_rate, weight_decay=0)

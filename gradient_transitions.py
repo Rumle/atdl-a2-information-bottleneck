@@ -1,6 +1,6 @@
 import argparse
 import csv
-from dataclasses import replace
+from dataclasses import asdict, replace
 from math import isfinite
 from pathlib import Path
 from statistics import fmean
@@ -22,7 +22,7 @@ class GradientTransitions(Callback):
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         inputs, targets = batch
-        # Measure after the update, like the authors' code, without changing .grad.
+        # Measure batch gradients after the weight update, following the authors' code.
         with torch.enable_grad():
             loss = functional.cross_entropy(pl_module(inputs), targets)
             gradients = torch.autograd.grad(loss, [layer.weight for layer in pl_module.layers])
@@ -34,17 +34,12 @@ class GradientTransitions(Callback):
         for layer_index, layer in enumerate(pl_module.layers, 1):
             gradients = torch.stack(self.gradients[layer_index - 1])
             mean = gradients.mean(dim=0)
-            # Compare gradient vectors, not just their lengths, to capture direction changes.
+            # Measure the spread of batch gradient vectors around their mean.
             variability = (gradients - mean).square().sum(dim=1).mean().sqrt()
             weight_norm = layer.weight.detach().norm()
             metrics[f"gradient_mean_layer_{layer_index}"] = mean.norm() / weight_norm
             metrics[f"gradient_std_layer_{layer_index}"] = variability / weight_norm
         pl_module.log_dict(metrics, on_step=False, on_epoch=True, batch_size=1)
-
-    def on_train_end(self, trainer, pl_module):
-        trainer.logger.save()
-        plot(trainer.logger.save_dir, pl_module.settings.optimizer, pl_module.settings.learning_rate)
-
 
 def read_metrics(run_dir: str | Path):
     """Combine saved training sessions, keeping the latest measurement per epoch."""
@@ -62,37 +57,54 @@ def read_metrics(run_dir: str | Path):
     return [records[epoch] for epoch in sorted(records)]
 
 
-def plot(run_dir: str | Path, optimizer: str = "adam", learning_rate: float = 0.002):
+def plot(run_dir: str | Path, num_runs: int = 50, epochs: int = 8000):
+    """Plot minibatch gradient statistics averaged across runs."""
     run_dir = Path(run_dir)
-    rows = read_metrics(run_dir)
-    epochs = [int(row["epoch"]) + 1 for row in rows]
-    losses = [float(row["train_loss"]) for row in rows]
+    runs = [read_metrics(run_dir / f"run-{index + 1}") for index in range(num_runs)]
+    for index, rows in enumerate(runs, 1):
+        if [int(row["epoch"]) for row in rows] != list(range(epochs)):
+            raise ValueError(f"Run {index} must contain exactly {epochs} consecutive epochs.")
+    fields = [key for key in runs[0][0] if key.startswith("gradient_") or key == "train_loss"]
+    rows = []
+    # Average each metric across runs at the same epoch.
+    for epoch in range(epochs):
+        row = {"epoch": epoch}
+        for field in fields:
+            values = [float(run[epoch][field]) for run in runs]
+            if not all(isfinite(value) for value in values):
+                raise ValueError(f"Non-finite {field} at epoch {epoch}.")
+            row[field] = fmean(values)
+        rows.append(row)
+    with (run_dir / "gradient_metrics.csv").open("w", newline="") as output:
+        writer = csv.DictWriter(output, fieldnames=["epoch", *fields])
+        writer.writeheader()
+        writer.writerows(rows)
+    epoch_numbers = [int(row["epoch"]) + 1 for row in rows]
     layer_count = sum(key.startswith("gradient_mean_layer_") for key in rows[0])
-    figure, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+    figure, axis = plt.subplots(figsize=(6, 4))
     marker = "." if len(rows) == 1 else None
     colors = ("red", "c", "blue", "green", "orange", "purple")
+    mean_lines, std_lines = [], []
     for layer_index in range(1, layer_count + 1):
         mean = [float(row[f"gradient_mean_layer_{layer_index}"]) for row in rows]
         variability = [float(row[f"gradient_std_layer_{layer_index}"]) for row in rows]
         color = colors[(layer_index - 1) % len(colors)]
-        axes[0].plot(epochs, mean, marker=marker, linewidth=2, color=color, label=f"Layer {layer_index}")
-        axes[0].plot(epochs, variability, marker=marker, linestyle=":", linewidth=2, color=color)
-        axes[1].scatter(losses, mean, marker=".", s=8, alpha=0.5, color=color)
-        axes[1].scatter(losses, variability, marker="x", s=8, alpha=0.5, color=color)
-    axes[0].set_xscale("log")
-    axes[0].set_xlabel("# Epochs")
-    axes[1].set_xlabel("Full training loss")
-    axes[0].set_ylabel("Normalized Mean and STD")
-    axes[0].set_title("Mean (solid), STD (dotted)")
-    axes[1].set_title("Mean (dots), STD (crosses)")
-    for axis in axes:
-        axis.set_yscale("log")
-    axes[0].legend(fontsize="small", ncol=2)
-    label = "Released-code-style baseline" if optimizer == "adam" else "Optimizer comparison"
-    figure.suptitle(f"{optimizer.upper()}: {label} (lr={learning_rate:g})")
+        mean_line, = axis.plot(epoch_numbers, mean, marker=marker, linewidth=1, color=color)
+        std_line, = axis.plot(epoch_numbers, variability, marker=marker, linestyle=":", linewidth=1, color=color)
+        mean_lines.append(mean_line)
+        std_lines.append(std_line)
+    axis.set(xscale="log", yscale="log", xlabel="# Epochs", ylabel="Normalized Mean and STD")
+    std_legend = axis.legend(std_lines, [""] * layer_count, title=r"$STD(\nabla W_i)$",
+                             loc="upper left", bbox_to_anchor=(0.22, 1), fontsize="small",
+                             title_fontsize="small", framealpha=1, fancybox=False)
+    axis.add_artist(std_legend)
+    axis.legend(mean_lines, [""] * layer_count, title=r"$\|Mean(\nabla W_i)\|$",
+                loc="upper left", bbox_to_anchor=(0.42, 1), fontsize="small",
+                title_fontsize="small", framealpha=1, fancybox=False)
     figure.tight_layout()
     figure.savefig(run_dir / "gradient_transitions.png", dpi=200)
     plt.close(figure)
+    return rows
 
 
 def sweep(settings: Settings, run_dir: str | Path, accelerator="auto"):
@@ -103,11 +115,12 @@ def sweep(settings: Settings, run_dir: str | Path, accelerator="auto"):
     for rate in (0.002, 0.004, 0.008):
         rate_dir = run_dir / f"lr-{rate:g}"
         train_runs(
-            replace(settings, optimizer="sgd", learning_rate=rate),
+            replace(settings, learning_rate=rate),
             1, rate_dir, accelerator=accelerator, callback=GradientTransitions,
         )
         rows = read_metrics(rate_dir / "run-1")
         losses = [float(row["train_loss"]) for row in rows]
+        # Check late loss improvement and the largest upward step.
         tail = losses[-100:]
         tail_loss = fmean(tail)
         rebound = max((right - left for left, right in zip(tail, tail[1:])), default=0.0)
@@ -137,25 +150,33 @@ def sweep(settings: Settings, run_dir: str | Path, accelerator="auto"):
     return best
 
 
+def experiment(settings: Settings, run_dir: str | Path, sweep_epochs=1000, num_runs=50, accelerator="auto"):
+    run_dir = Path(run_dir)
+    pilot_settings = Settings(**{**asdict(settings), "epochs": sweep_epochs})
+    best = sweep(pilot_settings, run_dir / f"sweep-{sweep_epochs}", accelerator)
+    if best is None:
+        raise ValueError("No stable pilot rate found. The full experiment was not started.")
+    # Use fresh seeds for the final experiment.
+    settings = replace(settings, learning_rate=best["learning_rate"], seed=settings.seed + 1)
+    results_dir = run_dir / f"lr-{settings.learning_rate:g}"
+    train_runs(settings, num_runs, results_dir, accelerator=accelerator, callback=GradientTransitions)
+    plot(results_dir, num_runs, settings.epochs)
+    return results_dir
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--optimizer", choices=("adam", "sgd"), default="adam")
     parser.add_argument("--sweep", action="store_true", help="Probe three SGD rates with one paired run each.")
     parser.add_argument("--epochs", type=int, default=8000)
-    parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--sweep-epochs", type=int, default=1000)
+    parser.add_argument("--runs", type=int, default=50)
     args = parser.parse_args()
-    if args.epochs < 1:
-        parser.error("--epochs must be positive")
-    if args.learning_rate is not None and (not isfinite(args.learning_rate) or args.learning_rate <= 0):
-        parser.error("--learning-rate must be finite and positive")
-    settings = Settings(epochs=args.epochs, optimizer=args.optimizer)
-    if args.learning_rate is not None:
-        settings = replace(settings, learning_rate=args.learning_rate)
-    root = Path(__file__).parent / "runs"
+    if min(args.epochs, args.sweep_epochs, args.runs) < 1:
+        parser.error("--epochs, --sweep-epochs and --runs must be positive")
+    settings = Settings(epochs=args.epochs)
+    root = Path(__file__).parent / "runs/gradient_transitions_experiment"
     if args.sweep:
-        sweep(settings, root / "gradient_transitions_sgd_sweep")
+        pilot_settings = Settings(epochs=args.sweep_epochs)
+        sweep(pilot_settings, root / f"sweep-{args.sweep_epochs}")
     else:
-        folder = "gradient_transitions" if args.optimizer == "adam" else "gradient_transitions_sgd"
-        if args.learning_rate is not None:
-            folder += f"_lr-{args.learning_rate:g}"
-        train_runs(settings, 50, root / folder, accelerator="auto", callback=GradientTransitions)
+        experiment(settings, root, args.sweep_epochs, args.runs)
