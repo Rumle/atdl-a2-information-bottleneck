@@ -95,11 +95,11 @@ def plot(run_dir: str | Path, num_runs: int = 50, epochs: int = 8000):
         std_lines.append(std_line)
     axis.set(xscale="log", yscale="log", xlabel="# Epochs", ylabel="Normalized Mean and STD")
     std_legend = axis.legend(std_lines, [""] * layer_count, title=r"$STD(\nabla W_i)$",
-                             loc="upper left", bbox_to_anchor=(0.22, 1), fontsize="small",
+                             loc="upper left", bbox_to_anchor=(0, 1), fontsize="small",
                              title_fontsize="small", framealpha=1, fancybox=False)
     axis.add_artist(std_legend)
-    axis.legend(mean_lines, [""] * layer_count, title=r"$\|Mean(\nabla W_i)\|$",
-                loc="upper left", bbox_to_anchor=(0.42, 1), fontsize="small",
+    axis.legend(mean_lines, [f"Layer {index}" for index in range(1, layer_count + 1)], title=r"$\|Mean(\nabla W_i)\|$",
+                loc="upper left", bbox_to_anchor=(0.14, 1), fontsize="small",
                 title_fontsize="small", framealpha=1, fancybox=False)
     figure.tight_layout()
     figure.savefig(run_dir / "gradient_transitions.png", dpi=200)
@@ -119,18 +119,20 @@ def sweep(settings: Settings, run_dir: str | Path, accelerator="auto"):
             1, rate_dir, accelerator=accelerator, callback=GradientTransitions,
         )
         rows = read_metrics(rate_dir / "run-1")
+        if [int(row["epoch"]) for row in rows] != list(range(settings.epochs)):
+            raise ValueError(f"Pilot at lr={rate:g} must contain {settings.epochs} consecutive epochs.")
         losses = [float(row["train_loss"]) for row in rows]
-        # Check late loss improvement and the largest upward step.
+        # Check final loss improvement and upward steps across the full run.
         tail = losses[-100:]
         tail_loss = fmean(tail)
-        rebound = max((right - left for left, right in zip(tail, tail[1:])), default=0.0)
+        rebound = max((right - left for left, right in zip(losses, losses[1:])), default=0.0)
         rebound = max(0.0, rebound)
         stable = all(isfinite(loss) for loss in losses) and tail_loss < losses[0] and rebound <= 0.01
         result = {
             "learning_rate": rate,
             "first_epoch_loss": losses[0],
             "tail_loss": tail_loss,
-            "max_tail_rebound": rebound,
+            "max_rebound": rebound,
             "stable": stable,
         }
         results.append(result)
@@ -138,19 +140,19 @@ def sweep(settings: Settings, run_dir: str | Path, accelerator="auto"):
             best = result
     for result in results:
         result["selected"] = result is best
-        result["selection_rule"] = "Lowest last-100 mean, finite losses, mean < first loss, last-100 rebound <= 0.01 nats"
+        result["selection_rule"] = "Choose the lowest average loss in the last 100 epochs. All losses must be finite, this average must be below the first loss and loss must rise by at most 0.01 nats per epoch."
     with (run_dir / "summary.csv").open("w", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=results[0].keys())
         writer.writeheader()
         writer.writerows(results)
-    print("Stable: finite losses, lower tail mean, late rebounds <= 0.01 nats.")
+    print("Stable: finite losses, lower tail mean, full-run rebounds <= 0.01 nats.")
     for result in results:
         print(result)
     print(f"Pilot choice: lr={best['learning_rate']:g}" if best else "No stable rate found.")
     return best
 
 
-def experiment(settings: Settings, run_dir: str | Path, sweep_epochs=1000, num_runs=50, accelerator="auto"):
+def experiment(settings: Settings, run_dir: str | Path, sweep_epochs=8000, num_runs=50, accelerator="auto", workers=1):
     run_dir = Path(run_dir)
     pilot_settings = Settings(**{**asdict(settings), "epochs": sweep_epochs})
     best = sweep(pilot_settings, run_dir / f"sweep-{sweep_epochs}", accelerator)
@@ -159,7 +161,7 @@ def experiment(settings: Settings, run_dir: str | Path, sweep_epochs=1000, num_r
     # Use fresh seeds for the final experiment.
     settings = replace(settings, learning_rate=best["learning_rate"], seed=settings.seed + 1)
     results_dir = run_dir / f"lr-{settings.learning_rate:g}"
-    train_runs(settings, num_runs, results_dir, accelerator=accelerator, callback=GradientTransitions)
+    train_runs(settings, num_runs, results_dir, accelerator=accelerator, callback=GradientTransitions, workers=workers)
     plot(results_dir, num_runs, settings.epochs)
     return results_dir
 
@@ -168,15 +170,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--sweep", action="store_true", help="Probe three SGD rates with one paired run each.")
     parser.add_argument("--epochs", type=int, default=8000)
-    parser.add_argument("--sweep-epochs", type=int, default=1000)
+    parser.add_argument("--sweep-epochs", type=int, default=8000)
     parser.add_argument("--runs", type=int, default=50)
+    parser.add_argument("--workers", type=int, default=1, help="Number of runs to train at once.")
     args = parser.parse_args()
-    if min(args.epochs, args.sweep_epochs, args.runs) < 1:
-        parser.error("--epochs, --sweep-epochs and --runs must be positive")
+    if min(args.epochs, args.sweep_epochs, args.runs, args.workers) < 1:
+        parser.error("--epochs, --sweep-epochs, --runs and --workers must be positive")
     settings = Settings(epochs=args.epochs)
     root = Path(__file__).parent / "runs/gradient_transitions_experiment"
     if args.sweep:
         pilot_settings = Settings(epochs=args.sweep_epochs)
         sweep(pilot_settings, root / f"sweep-{args.sweep_epochs}")
     else:
-        experiment(settings, root, args.sweep_epochs, args.runs)
+        experiment(settings, root, args.sweep_epochs, args.runs, workers=args.workers)

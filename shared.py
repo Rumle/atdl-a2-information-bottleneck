@@ -19,7 +19,7 @@ class Settings:
     data_path: str = str(DEFAULT_DATA)
     hidden_sizes: tuple[int, ...] = (10, 7, 5, 4, 3)
     activation: str = "tanh"
-    learning_rate: float = 0.0004
+    learning_rate: float = 0.002
     batch_size: int = 512
     epochs: int = 8000
     train_fraction: float = 0.8
