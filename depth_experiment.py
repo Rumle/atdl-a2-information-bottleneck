@@ -1,10 +1,3 @@
-"""Minimal replication of Fig. 5 (Schwartz-Ziv & Tishby 2017): depth vs. training time.
-
-python depth_minimal.py run         # trains depths 2, 4, 6 (3 runs, 8000 epochs), then writes runs/depth_minimal/summary.npz
-python depth_minimal.py summarize   # rebuild summary.npz from the run logs (e.g. after an interrupted run)
-python depth_minimal.py analyze     # table + figures, read from summary.npz only
-Delete runs/depth_minimal before re-running.
-"""
 import logging
 import sys
 import warnings
@@ -34,7 +27,7 @@ for _name in ("lightning", "pytorch_lightning"):
 DEPTHS = (1, 3, 5)              # number of hidden layers
 WIDTHS = (10, 7, 5, 4, 3)   # depth d uses the first d widths (+ the output layer)
 EPOCHS = 8000                   # fixed length, no early stopping
-RUNS = 1                        # runs per depth
+RUNS = 10                        # runs per depth
 LR = 0.002                      # learning rate
 EVERY = 10                     # log I(X;T), I(T;Y) of every layer every 200 epochs
 TRAIN_FRACTION = 0.8            # paper, Fig. 5
@@ -149,6 +142,7 @@ def analyze():
     out = ROOT / "figures"
     out.mkdir(parents=True, exist_ok=True)
     fig_acc, ax_acc = plt.subplots(figsize=(6, 4))
+    fig_last, axes_last = plt.subplots(1, 2, figsize=(11, 4))  # output layer I(X;T) and I(T;Y), all depths
     header = f"{'depth':>5} {'I(X;T)out':>10} {'I(T;Y)out':>10} {'test acc':>9} {'test loss':>10} {'epochs to acc>=' + str(ACC_TARGET):>20}"
     print(header)
     table = ["depth,I_XT_out,I_TY_out,test_acc,test_loss,epochs_to_threshold_median,epochs_to_threshold_per_run"]
@@ -201,6 +195,30 @@ def analyze():
         plt.close(figure)
 
         ax_acc.plot(epochs, acc.mean(0), label=f"{d} hidden")
+        axes_last[0].plot(epochs, mean[:, -1, 0], label=f"{d} hidden")  # output layer I(X;T)
+        axes_last[1].plot(epochs, mean[:, -1, 1], label=f"{d} hidden")  # output layer I(T;Y)
+
+    # figure 3: test accuracy per depth
+    ax_acc.axhline(ACC_TARGET, color="grey", ls=":")
+    ax_acc.set(xscale="log", xlabel="# Epochs", ylabel="test accuracy")
+    ax_acc.legend(fontsize="small")
+    fig_acc.tight_layout()
+    fig_acc.savefig(out / "test_accuracy.png", dpi=200)
+
+    # figure 4: I(X;T) and I(T;Y) of the last (output) layer, one line per depth
+    for axis, name in zip(axes_last, ("$I(X;T)$", "$I(T;Y)$")):
+        axis.set_xscale("log")
+        axis.set_xlabel("# Epochs")
+        axis.set_ylabel(f"{name} of output layer [bits]")
+    axes_last[1].legend(fontsize="small")
+    fig_last.tight_layout()
+    fig_last.savefig(out / "last_layer_information.png", dpi=200)
+    plt.close(fig_last)
+
+    (ROOT / "summary.csv").write_text("\n".join(table) + "\n")
+    print(f"\nTable saved in {(ROOT / 'summary.csv').resolve()}\nFigures saved in {out.resolve()}:")
+    for f in sorted(out.glob("*.png")):
+        print("  ", f.name)
 
     # figure 3: test accuracy per depth
     ax_acc.axhline(ACC_TARGET, color="grey", ls=":")
