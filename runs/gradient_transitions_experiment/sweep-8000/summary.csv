@@ -1,0 +1,4 @@
+learning_rate,first_epoch_loss,tail_loss,max_rebound,stable,selected,selection_rule
+0.002,0.6899634003639221,0.11139968402683735,0.0,True,True,"Choose the lowest average loss in the last 100 epochs. All losses must be finite, this average must be below the first loss and loss must rise by at most 0.01 nats per epoch."
+0.004,0.6899273991584778,0.04688914675265551,0.022683266550302505,False,False,"Choose the lowest average loss in the last 100 epochs. All losses must be finite, this average must be below the first loss and loss must rise by at most 0.01 nats per epoch."
+0.008,0.6898561120033264,0.017942176638171076,0.10204446129500866,False,False,"Choose the lowest average loss in the last 100 epochs. All losses must be finite, this average must be below the first loss and loss must rise by at most 0.01 nats per epoch."

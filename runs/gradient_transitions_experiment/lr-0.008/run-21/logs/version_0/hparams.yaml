@@ -1,0 +1,18 @@
+input_size: 12
+settings:
+  activation: tanh
+  batch_size: 512
+  data_path: /srv/ssd2/masters-degree/advanced-topics-in-deep-learning/Assignments/A2/atdl-a2-information-bottleneck/references/IDNNs/data/var_u.mat
+  epochs: 8000
+  hidden_sizes: !!python/tuple
+  - 10
+  - 7
+  - 5
+  - 4
+  - 3
+  learning_rate: 0.008
+  random_split: true
+  seed: 85137139
+  shuffle_batches: false
+  split_seed: 3222791729
+  train_fraction: 0.8

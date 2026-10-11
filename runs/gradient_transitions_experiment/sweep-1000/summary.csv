@@ -1,0 +1,4 @@
+learning_rate,first_epoch_loss,tail_loss,max_tail_rebound,stable,selected,selection_rule
+0.002,0.6899634003639221,0.5492312252521515,0.0,True,False,"Lowest last-100 mean, finite losses, mean < first loss, last-100 rebound <= 0.01 nats"
+0.004,0.6899273991584778,0.2476368486881256,0.0,True,False,"Lowest last-100 mean, finite losses, mean < first loss, last-100 rebound <= 0.01 nats"
+0.008,0.6898561120033264,0.20067950263619422,0.0,True,True,"Lowest last-100 mean, finite losses, mean < first loss, last-100 rebound <= 0.01 nats"
