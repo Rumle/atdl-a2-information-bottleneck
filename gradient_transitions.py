@@ -152,7 +152,7 @@ def sweep(settings: Settings, run_dir: str | Path, accelerator="auto"):
     return best
 
 
-def experiment(settings: Settings, run_dir: str | Path, sweep_epochs=8000, num_runs=50, accelerator="auto", workers=8):
+def experiment(settings: Settings, run_dir: str | Path, sweep_epochs=8000, num_runs=50, accelerator="auto", workers=1):
     run_dir = Path(run_dir)
     pilot_settings = Settings(**{**asdict(settings), "epochs": sweep_epochs})
     best = sweep(pilot_settings, run_dir / f"sweep-{sweep_epochs}", accelerator)
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=8000)
     parser.add_argument("--sweep-epochs", type=int, default=8000)
     parser.add_argument("--runs", type=int, default=50)
-    parser.add_argument("--workers", type=int, default=8, help="Number of runs to train at once.")
+    parser.add_argument("--workers", type=int, default=1, help="Number of runs to train at once.")
     args = parser.parse_args()
     if min(args.epochs, args.sweep_epochs, args.runs, args.workers) < 1:
         parser.error("--epochs, --sweep-epochs, --runs and --workers must be positive")

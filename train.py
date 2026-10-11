@@ -89,7 +89,7 @@ def train_runs(
     run_dir: str | Path,
     accelerator="auto",
     callback=Callback,
-    workers=8,
+    workers=1,
 ):
     if workers < 1:
         raise ValueError("workers must be at least 1")
@@ -116,4 +116,4 @@ def train_runs(
 if __name__ == "__main__":
     settings = Settings(epochs=8000)
     num_runs = 50
-    train_runs(settings, num_runs, "runs/randomized", accelerator="auto", workers=8)
+    train_runs(settings, num_runs, "runs/randomized", accelerator="auto", workers=1)
