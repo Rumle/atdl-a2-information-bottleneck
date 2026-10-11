@@ -1,0 +1,19 @@
+input_size: 12
+settings:
+  activation: tanh
+  batch_size: 512
+  data_path: C:\Users\hamsa\Documents\ATDL\assign3\atdl-a2-information-bottleneck\var_u.mat
+  epochs: 80
+  hidden_sizes: !!python/tuple
+  - 10
+  - 7
+  - 5
+  - 4
+  - 3
+  learning_rate: 0.002
+  optimizer: adam
+  random_split: true
+  seed: 3653403231
+  shuffle_batches: false
+  split_seed: 2735729615
+  train_fraction: 0.1
