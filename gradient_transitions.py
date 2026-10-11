@@ -81,7 +81,7 @@ def plot(run_dir: str | Path, num_runs: int = 50, epochs: int = 8000):
         writer.writerows(rows)
     epoch_numbers = [int(row["epoch"]) + 1 for row in rows]
     layer_count = sum(key.startswith("gradient_mean_layer_") for key in rows[0])
-    figure, axis = plt.subplots(figsize=(6, 4))
+    figure, axis = plt.subplots(figsize=(8, 5.5))
     marker = "." if len(rows) == 1 else None
     colors = ("red", "c", "blue", "green", "orange", "purple")
     mean_lines, std_lines = [], []
@@ -90,10 +90,15 @@ def plot(run_dir: str | Path, num_runs: int = 50, epochs: int = 8000):
         variability = [float(row[f"gradient_std_layer_{layer_index}"]) for row in rows]
         color = colors[(layer_index - 1) % len(colors)]
         mean_line, = axis.plot(epoch_numbers, mean, marker=marker, linewidth=1, color=color)
-        std_line, = axis.plot(epoch_numbers, variability, marker=marker, linestyle=":", linewidth=1, color=color)
+        std_line, = axis.plot(epoch_numbers, variability, marker=marker, linestyle=":", linewidth=2, color=color)
         mean_lines.append(mean_line)
         std_lines.append(std_line)
     axis.set(xscale="log", yscale="log", xlabel="# Epochs", ylabel="Normalized Mean and STD")
+    axis.set_xlim(1, 9000)
+    axis.set_ylim(0.0003, 10)
+    axis.set_xticks([1, 10, 100, 1000, 9000], labels=["1", "10", "100", "1000", "9000"])
+    axis.set_yticks([0.001, 0.01, 0.1, 1, 10])
+    axis.tick_params(which="both", direction="in", top=True, right=True)
     std_legend = axis.legend(std_lines, [""] * layer_count, title=r"$STD(\nabla W_i)$",
                              loc="upper left", bbox_to_anchor=(0, 1), fontsize="small",
                              title_fontsize="small", framealpha=1, fancybox=False)

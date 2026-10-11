@@ -31,10 +31,6 @@ We follow the **Replication Track**, using the authors’ released code where av
 
 Targeted ablation studies may examine how factors such as information-estimation settings, training-set size, or network depth affect the observed behavior.
 
-## Project Status
-
-Work in progress. Experimental results and reproducibility conclusions will be added as the study develops.
-
 ## References
 
 - Shwartz-Ziv, R., & Tishby, N. (2017). *Opening the Black Box of Deep Neural Networks via Information*. arXiv:1703.00810.
