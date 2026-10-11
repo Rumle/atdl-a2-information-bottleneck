@@ -18,12 +18,10 @@ The authors propose that training involves two phases:
 Our study examines whether selected experiments reproduce this reported behavior.
 
 ## Planned Experiments
-- Information-plane dynamics: Train one fixed network and plot each layer’s I(X;T) and I(T;Y) over training.
-- Gradient transition: Independently train a fixed network and track gradient mean and variability against epochs and training loss. This experiment uses its own runs, not the logs from Experiment 1 
-- Depth and training time: Train a predeclared set of network depths and compare the time or number of updates needed to reach a fixed test-performance threshold. Choose the threshold in advance, without relying on results from the other experiments.
-- Training-set size: Train one fixed architecture on predeclared sample fractions and compare test performance and, if feasible, final information-plane coordinates. This does not depend on the depth experiment.
-
-The final experimental scope and any deviations from the original setup will be documented.
+- **Information-plane dynamics:** Track and plot the input and label information in each layer during training.
+- **Gradient transition:** Track how gradient mean and variability change over training.
+- **Depth and training time:** Compare how long networks of different depths take to reach the same test performance.
+- **Training-set size:** Compare test performance when training the same architecture with different amounts of data.
 
 ## Replication Approach
 
